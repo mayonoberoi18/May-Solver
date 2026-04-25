@@ -2,10 +2,11 @@ import streamlit as st
 import sympy as sp
 import numpy as np
 import plotly.graph_objects as go
+import re
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver AI", layout="wide")
+st.set_page_config(page_title="MaySolver Stable", layout="wide")
 
 # ---------------- STYLE ----------------
 st.markdown("""
@@ -14,7 +15,7 @@ st.markdown("""
     background: linear-gradient(135deg,#0f0c29,#302b63,#24243e);
     color: white;
 }
-.block {
+.box {
     background: rgba(255,255,255,0.05);
     padding: 20px;
     border-radius: 15px;
@@ -23,86 +24,91 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------- SYMBOLS ----------------
-x, y, z = sp.symbols('x y z')
+x, y = sp.symbols('x y')
 
 # ---------------- SESSION ----------------
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ---------------- AI TRANSLATOR ----------------
-def ai_to_math(problem):
+# ---------------- SAFE PARSER ----------------
+def safe_sympy(expr):
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-        prompt = f"""
-        Convert the following word problem into mathematical equations using variables x, y, z.
-
-        Only return equations. No explanation.
-
-        Problem:
-        {problem}
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            timeout=10
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
+        return sp.sympify(expr)
+    except:
         return None
 
-# ---------------- PARSER ----------------
-def parse_equations(text):
-    equations = []
-    lines = text.split("\n")
+# ---------------- WORD PROBLEM HANDLER ----------------
+def solve_word_problem(text):
+    text = text.lower()
 
-    for line in lines:
-        if "=" in line:
-            try:
-                lhs, rhs = line.split("=")
-                eq = sp.Eq(sp.sympify(lhs.strip()), sp.sympify(rhs.strip()))
-                equations.append(eq)
-            except:
-                continue
+    # convert words → numbers
+    words = {
+        "one":1,"two":2,"three":3,"four":4,"five":5,
+        "six":6,"seven":7,"eight":8,"nine":9,"ten":10
+    }
+    for w,n in words.items():
+        text = text.replace(w, str(n))
 
-    return equations
+    nums = list(map(int, re.findall(r'\d+', text)))
 
-# ---------------- SOLVER ----------------
-def solve_problem(user_input):
-    # Try AI first
-    ai_output = ai_to_math(user_input)
-
-    if ai_output:
-        eqs = parse_equations(ai_output)
-        if eqs:
-            try:
-                sol = sp.solve(eqs)
-                return sol, eqs, "AI Word Problem", ai_output
-            except:
-                pass
-
-    # Fallback to direct math
     try:
-        if "=" in user_input:
-            lhs, rhs = user_input.split("=")
-            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
-            sol = sp.solve(eq)
-            return sol, [eq], "Equation", None
-        else:
-            expr = sp.sympify(user_input)
+        # difference + multiple pattern
+        if "difference" in text and "times" in text and len(nums) >= 2:
+            eq1 = sp.Eq(x - y, nums[0])
+            eq2 = sp.Eq(x, nums[1]*y)
+            sol = sp.solve((eq1, eq2), (x,y))
+            return sol, [eq1, eq2], "Word Problem"
+
+        # sum + multiple
+        if "sum" in text and "times" in text and len(nums) >= 2:
+            eq1 = sp.Eq(x + y, nums[0])
+            eq2 = sp.Eq(x, nums[1]*y)
+            sol = sp.solve((eq1, eq2), (x,y))
+            return sol, [eq1, eq2], "Word Problem"
+
+    except:
+        pass
+
+    return None, None, None
+
+# ---------------- MAIN SOLVER ----------------
+def solve_math(user_input):
+    text = user_input.strip()
+
+    # 1. Try word problem
+    sol, eqs, cat = solve_word_problem(text)
+    if sol:
+        return sol, eqs, cat
+
+    # 2. Try equation
+    if "=" in text:
+        try:
+            lhs, rhs = text.split("=")
+            lhs_expr = safe_sympy(lhs)
+            rhs_expr = safe_sympy(rhs)
+
+            if lhs_expr is not None and rhs_expr is not None:
+                eq = sp.Eq(lhs_expr, rhs_expr)
+                sol = sp.solve(eq)
+                return sol, [eq], "Equation"
+        except:
+            pass
+
+    # 3. Try expression
+    expr = safe_sympy(text)
+    if expr is not None:
+        try:
             sol = sp.solve(expr)
-            return sol, [expr], "Expression", None
-    except Exception as e:
-        return None, None, str(e), None
+            return sol, [expr], "Expression"
+        except:
+            pass
+
+    return None, None, "Could not understand input"
 
 # ---------------- GRAPH ----------------
 def plot_graph(eqs):
     fig = go.Figure()
-    x_vals = np.linspace(-10, 10, 300)
+    x_vals = np.linspace(-10, 10, 200)
 
     for eq in eqs:
         try:
@@ -111,12 +117,7 @@ def plot_graph(eqs):
                 f = sp.lambdify(x, y_expr[0], "numpy")
                 y_vals = f(x_vals)
 
-                fig.add_trace(go.Scatter(
-                    x=x_vals,
-                    y=y_vals,
-                    mode='lines',
-                    name=str(eq)
-                ))
+                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines'))
         except:
             continue
 
@@ -124,27 +125,23 @@ def plot_graph(eqs):
     return fig
 
 # ---------------- UI ----------------
-st.sidebar.title("🚀 MaySolver AI")
-page = st.sidebar.radio("Navigate", ["Solver", "Graph", "History", "About"])
+st.sidebar.title("🚀 MaySolver")
+page = st.sidebar.radio("Menu", ["Solver", "Graph", "History", "About"])
 
 # -------- SOLVER --------
 if page == "Solver":
-    st.title("🧠 AI Math Solver")
+    st.title("🧠 Smart Math Solver")
 
-    user_input = st.text_area("Enter any math problem:")
+    user_input = st.text_area("Enter problem:")
 
     if st.button("Solve"):
         if user_input:
-            with st.spinner("Thinking..."):
+            with st.spinner("Solving..."):
 
-                sol, eqs, cat, ai_text = solve_problem(user_input)
+                sol, eqs, cat = solve_math(user_input)
 
                 if eqs:
                     st.success(f"Detected: {cat}")
-
-                    if ai_text:
-                        st.subheader("🤖 AI Converted Problem")
-                        st.code(ai_text)
 
                     st.subheader("🧾 Equations")
                     for eq in eqs:
@@ -155,7 +152,6 @@ if page == "Solver":
 
                     st.session_state["eqs"] = eqs
 
-                    # Save history
                     st.session_state.history.append({
                         "time": datetime.now().strftime("%H:%M:%S"),
                         "input": user_input,
@@ -167,7 +163,7 @@ if page == "Solver":
 
 # -------- GRAPH --------
 elif page == "Graph":
-    st.title("📊 Graph Visualizer")
+    st.title("📊 Graph")
 
     if "eqs" in st.session_state:
         fig = plot_graph(st.session_state["eqs"])
@@ -191,13 +187,7 @@ elif page == "History":
 
 # -------- ABOUT --------
 elif page == "About":
-    st.title("🔥 About")
-    st.write("""
-    MaySolver AI:
-    - Understands word problems
-    - Solves equations
-    - Graphs results
-    - Uses AI + SymPy
-    """)
+    st.title("About")
+    st.write("Stable Math Solver (No API, No Errors)")
 
-st.markdown("<center>🚀 MaySolver AI | Final Version</center>", unsafe_allow_html=True)
+st.markdown("<center>🚀 MaySolver Stable Version</center>", unsafe_allow_html=True)
