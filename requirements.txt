@@ -1,4 +1,4 @@
+streamlit==1.33.0
 sympy==1.12
-streamlit==1.31.0
-plotly==5.18.0
+plotly==5.20.0
 numpy==1.26.4
