@@ -1,20 +1,5 @@
-# Core Math & Logic
-sympy==1.12          # Symbolic math engine (Exact answers, no hallucinations)
-numpy==1.26.4        # Numerical calculations for graphs
-scipy==1.11.4        # Advanced scientific computing
-
-# Frontend & UI (Maybot Style)
-streamlit==1.31.0    # Web framework for the dark-mode interface
-streamlit-extras     # Extra UI components for a premium feel
-
-# Data Visualization
-matplotlib==3.8.2    # For plotting parabolas, circles, and lines
-plotly==5.18.0       # For interactive 3D geometry visualization
-
-# NLP & Word Problem Parsing
-spacy==3.7.2         # Natural Language Processing for text extraction
-textblob==0.17.1     # Simple text analysis
-python-dotenv        # To securely store your Vision/API keys
-
-# Optional: Vision (If you add camera support later)
-requests             # For calling the Mathpix or Gemini Vision APIs
+sympy==1.12
+streamlit==1.31.0
+plotly==5.18.0
+numpy==1.26.4
+scipy==1.11.4
