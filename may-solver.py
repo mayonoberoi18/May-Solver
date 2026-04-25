@@ -2,11 +2,10 @@ import streamlit as st
 import sympy as sp
 import numpy as np
 import plotly.graph_objects as go
-import re
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver Pro", layout="wide")
+st.set_page_config(page_title="MaySolver AI", layout="wide")
 
 # ---------------- STYLE ----------------
 st.markdown("""
@@ -15,7 +14,7 @@ st.markdown("""
     background: linear-gradient(135deg,#0f0c29,#302b63,#24243e);
     color: white;
 }
-.glass {
+.block {
     background: rgba(255,255,255,0.05);
     padding: 20px;
     border-radius: 15px;
@@ -30,58 +29,75 @@ x, y, z = sp.symbols('x y z')
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ---------------- BRAIN ----------------
-class MathBrain:
+# ---------------- AI TRANSLATOR ----------------
+def ai_to_math(problem):
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-    def preprocess(self, text):
-        text = text.lower()
-        text = text.replace("^", "**")
-        text = text.replace("equals", "=")
-        text = text.replace("is", "=")
-        return text
+        prompt = f"""
+        Convert the following word problem into mathematical equations using variables x, y, z.
 
-    def parse_equations(self, text):
-        parts = re.split(r',|and', text)
-        eqs = []
+        Only return equations. No explanation.
 
-        for part in parts:
-            if "=" in part:
-                try:
-                    lhs, rhs = part.split("=")
-                    eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
-                    eqs.append(eq)
-                except:
-                    pass
-        return eqs
+        Problem:
+        {problem}
+        """
 
-    def solve(self, text):
-        text = self.preprocess(text)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=10
+        )
 
-        eqs = self.parse_equations(text)
+        return response.choices[0].message.content.strip()
 
-        # SYSTEM
-        if len(eqs) > 1:
+    except Exception as e:
+        return None
+
+# ---------------- PARSER ----------------
+def parse_equations(text):
+    equations = []
+    lines = text.split("\n")
+
+    for line in lines:
+        if "=" in line:
+            try:
+                lhs, rhs = line.split("=")
+                eq = sp.Eq(sp.sympify(lhs.strip()), sp.sympify(rhs.strip()))
+                equations.append(eq)
+            except:
+                continue
+
+    return equations
+
+# ---------------- SOLVER ----------------
+def solve_problem(user_input):
+    # Try AI first
+    ai_output = ai_to_math(user_input)
+
+    if ai_output:
+        eqs = parse_equations(ai_output)
+        if eqs:
             try:
                 sol = sp.solve(eqs)
-                return sol, eqs, "System"
-            except Exception as e:
-                return None, None, str(e)
+                return sol, eqs, "AI Word Problem", ai_output
+            except:
+                pass
 
-        # SINGLE
-        if len(eqs) == 1:
-            try:
-                sol = sp.solve(eqs[0])
-                return sol, eqs, "Equation"
-            except Exception as e:
-                return None, None, str(e)
-
-        # EXPRESSION
-        try:
-            expr = sp.sympify(text)
+    # Fallback to direct math
+    try:
+        if "=" in user_input:
+            lhs, rhs = user_input.split("=")
+            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
+            sol = sp.solve(eq)
+            return sol, [eq], "Equation", None
+        else:
+            expr = sp.sympify(user_input)
             sol = sp.solve(expr)
-            return sol, [expr], "Expression"
-        except Exception as e:
-            return None, None, str(e)
+            return sol, [expr], "Expression", None
+    except Exception as e:
+        return None, None, str(e), None
 
 # ---------------- GRAPH ----------------
 def plot_graph(eqs):
@@ -107,45 +123,30 @@ def plot_graph(eqs):
     fig.update_layout(template="plotly_dark")
     return fig
 
-# ---------------- AI (OPTIONAL) ----------------
-def ask_ai(question):
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Explain math step by step clearly."},
-                {"role": "user", "content": question}
-            ],
-            timeout=10
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"AI Error: {e}"
-
 # ---------------- UI ----------------
-brain = MathBrain()
-
-st.sidebar.title("🚀 MaySolver Pro")
-page = st.sidebar.radio("Navigate", ["Solver", "Graph", "AI Tutor", "History", "About"])
+st.sidebar.title("🚀 MaySolver AI")
+page = st.sidebar.radio("Navigate", ["Solver", "Graph", "History", "About"])
 
 # -------- SOLVER --------
 if page == "Solver":
-    st.title("🧠 Smart Solver")
+    st.title("🧠 AI Math Solver")
 
-    user_input = st.text_area("Enter math problem:")
+    user_input = st.text_area("Enter any math problem:")
 
     if st.button("Solve"):
         if user_input:
-            with st.spinner("Solving..."):
-                sol, eqs, cat = brain.solve(user_input)
+            with st.spinner("Thinking..."):
+
+                sol, eqs, cat, ai_text = solve_problem(user_input)
 
                 if eqs:
                     st.success(f"Detected: {cat}")
 
-                    st.subheader("🧾 Steps")
+                    if ai_text:
+                        st.subheader("🤖 AI Converted Problem")
+                        st.code(ai_text)
+
+                    st.subheader("🧾 Equations")
                     for eq in eqs:
                         st.latex(sp.latex(eq))
 
@@ -160,6 +161,7 @@ if page == "Solver":
                         "input": user_input,
                         "output": str(sol)
                     })
+
                 else:
                     st.error(cat)
 
@@ -172,17 +174,6 @@ elif page == "Graph":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Solve something first")
-
-# -------- AI --------
-elif page == "AI Tutor":
-    st.title("🤖 AI Tutor")
-
-    q = st.text_area("Ask anything")
-
-    if st.button("Get Explanation"):
-        if q:
-            with st.spinner("Thinking..."):
-                st.write(ask_ai(q))
 
 # -------- HISTORY --------
 elif page == "History":
@@ -202,11 +193,11 @@ elif page == "History":
 elif page == "About":
     st.title("🔥 About")
     st.write("""
-    MaySolver Pro:
-    - Smart Math Solver
-    - Graph Visualizer
-    - AI Tutor
-    - Built with Streamlit
+    MaySolver AI:
+    - Understands word problems
+    - Solves equations
+    - Graphs results
+    - Uses AI + SymPy
     """)
 
-st.markdown("<center>🚀 MaySolver Pro | 2026 Edition</center>", unsafe_allow_html=True)
+st.markdown("<center>🚀 MaySolver AI | Final Version</center>", unsafe_allow_html=True)
