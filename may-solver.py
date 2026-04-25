@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver Stable", layout="wide")
+st.set_page_config(page_title="MaySolver Smart", layout="wide")
 
 # ---------------- STYLE ----------------
 st.markdown("""
@@ -14,11 +14,6 @@ st.markdown("""
 .stApp {
     background: linear-gradient(135deg,#0f0c29,#302b63,#24243e);
     color: white;
-}
-.box {
-    background: rgba(255,255,255,0.05);
-    padding: 20px;
-    border-radius: 15px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -30,80 +25,86 @@ x, y = sp.symbols('x y')
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ---------------- SAFE PARSER ----------------
-def safe_sympy(expr):
-    try:
-        return sp.sympify(expr)
-    except:
-        return None
-
-# ---------------- WORD PROBLEM HANDLER ----------------
-def solve_word_problem(text):
-    text = text.lower()
-
-    # convert words → numbers
+# ---------------- WORD → NUMBER ----------------
+def word_to_number(text):
     words = {
         "one":1,"two":2,"three":3,"four":4,"five":5,
         "six":6,"seven":7,"eight":8,"nine":9,"ten":10
     }
     for w,n in words.items():
-        text = text.replace(w, str(n))
+        text = re.sub(rf"\b{w}\b", str(n), text)
+    return text
+
+# ---------------- SMART PARSER ----------------
+def smart_parser(text):
+    text = text.lower()
+    text = word_to_number(text)
+
+    # Remove noise words
+    text = re.sub(r'\b(numbers?|find|them|and)\b', '', text)
 
     nums = list(map(int, re.findall(r'\d+', text)))
 
     try:
-        # difference + multiple pattern
-        if "difference" in text and "times" in text and len(nums) >= 2:
-            eq1 = sp.Eq(x - y, nums[0])
-            eq2 = sp.Eq(x, nums[1]*y)
-            sol = sp.solve((eq1, eq2), (x,y))
-            return sol, [eq1, eq2], "Word Problem"
+        # -------- DIFFERENCE --------
+        if "difference" in text:
+            diff = nums[0]
 
-        # sum + multiple
-        if "sum" in text and "times" in text and len(nums) >= 2:
-            eq1 = sp.Eq(x + y, nums[0])
-            eq2 = sp.Eq(x, nums[1]*y)
-            sol = sp.solve((eq1, eq2), (x,y))
-            return sol, [eq1, eq2], "Word Problem"
+            if "times" in text:
+                multiplier = nums[1]
+                eq1 = sp.Eq(x - y, diff)
+                eq2 = sp.Eq(x, multiplier * y)
+                return [eq1, eq2]
+
+            elif "sum" in text:
+                total = nums[1]
+                eq1 = sp.Eq(x - y, diff)
+                eq2 = sp.Eq(x + y, total)
+                return [eq1, eq2]
+
+        # -------- SUM --------
+        if "sum" in text:
+            total = nums[0]
+
+            if "times" in text:
+                multiplier = nums[1]
+                eq1 = sp.Eq(x + y, total)
+                eq2 = sp.Eq(x, multiplier * y)
+                return [eq1, eq2]
+
+        # -------- DIRECT EQUATION --------
+        if "=" in text:
+            lhs, rhs = text.split("=")
+            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
+            return [eq]
 
     except:
         pass
 
-    return None, None, None
+    return None
 
-# ---------------- MAIN SOLVER ----------------
+# ---------------- SOLVER ----------------
 def solve_math(user_input):
-    text = user_input.strip()
+    eqs = smart_parser(user_input)
 
-    # 1. Try word problem
-    sol, eqs, cat = solve_word_problem(text)
-    if sol:
-        return sol, eqs, cat
-
-    # 2. Try equation
-    if "=" in text:
+    if eqs:
         try:
-            lhs, rhs = text.split("=")
-            lhs_expr = safe_sympy(lhs)
-            rhs_expr = safe_sympy(rhs)
-
-            if lhs_expr is not None and rhs_expr is not None:
-                eq = sp.Eq(lhs_expr, rhs_expr)
-                sol = sp.solve(eq)
-                return sol, [eq], "Equation"
+            sol = sp.solve(eqs, (x, y))
+            return sol, eqs, "Smart Word Problem"
         except:
             pass
 
-    # 3. Try expression
-    expr = safe_sympy(text)
-    if expr is not None:
-        try:
-            sol = sp.solve(expr)
-            return sol, [expr], "Expression"
-        except:
-            pass
+    # fallback simple
+    try:
+        if "=" in user_input:
+            lhs, rhs = user_input.split("=")
+            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
+            sol = sp.solve(eq)
+            return sol, [eq], "Equation"
+    except:
+        pass
 
-    return None, None, "Could not understand input"
+    return None, None, "Could not understand"
 
 # ---------------- GRAPH ----------------
 def plot_graph(eqs):
@@ -126,7 +127,7 @@ def plot_graph(eqs):
 
 # ---------------- UI ----------------
 st.sidebar.title("🚀 MaySolver")
-page = st.sidebar.radio("Menu", ["Solver", "Graph", "History", "About"])
+page = st.sidebar.radio("Menu", ["Solver", "Graph", "History"])
 
 # -------- SOLVER --------
 if page == "Solver":
@@ -136,30 +137,34 @@ if page == "Solver":
 
     if st.button("Solve"):
         if user_input:
-            with st.spinner("Solving..."):
+            sol, eqs, cat = solve_math(user_input)
 
-                sol, eqs, cat = solve_math(user_input)
+            if eqs:
+                st.success(f"Detected: {cat}")
 
-                if eqs:
-                    st.success(f"Detected: {cat}")
+                st.subheader("🧾 Equations")
+                for eq in eqs:
+                    st.latex(sp.latex(eq))
 
-                    st.subheader("🧾 Equations")
-                    for eq in eqs:
-                        st.latex(sp.latex(eq))
+                st.subheader("✅ Answer")
 
-                    st.subheader("✅ Answer")
+                # Fix JSON issue
+                if isinstance(sol, dict):
+                    sol_clean = {str(k): v for k, v in sol.items()}
+                    st.write(sol_clean)
+                else:
                     st.write(sol)
 
-                    st.session_state["eqs"] = eqs
+                st.session_state["eqs"] = eqs
 
-                    st.session_state.history.append({
-                        "time": datetime.now().strftime("%H:%M:%S"),
-                        "input": user_input,
-                        "output": str(sol)
-                    })
+                st.session_state.history.append({
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "input": user_input,
+                    "output": str(sol)
+                })
 
-                else:
-                    st.error(cat)
+            else:
+                st.error(cat)
 
 # -------- GRAPH --------
 elif page == "Graph":
@@ -185,9 +190,4 @@ elif page == "History":
     else:
         st.info("No history yet")
 
-# -------- ABOUT --------
-elif page == "About":
-    st.title("About")
-    st.write("Stable Math Solver (No API, No Errors)")
-
-st.markdown("<center>🚀 MaySolver Stable Version</center>", unsafe_allow_html=True)
+st.markdown("<center>🚀 MaySolver Smart Parser Edition</center>", unsafe_allow_html=True)
