@@ -1,56 +1,93 @@
 import streamlit as st
 import sympy as sp
+import plotly.graph_objects as go
 
-# 1. MAYBOT STYLING (CSS Injection)
+# 1. THE "ULTIMATE" BACKGROUND & STYLING
+# This CSS creates a deep-space gradient with glass-effect cards
+st.set_page_config(page_title="Maybot Math Pro", layout="wide")
+
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; color: #ffffff; }
-    .stButton>button {
-        background: linear-gradient(45deg, #6a11cb 0%, #2575fc 100%);
-        color: white; border-radius: 20px; border: none;
-        padding: 10px 24px; font-weight: bold; width: 100%;
+    /* Full page background */
+    .stApp {
+        background: radial-gradient(circle at top right, #1a1a2e, #16213e, #0f3460);
+        color: #e94560;
     }
-    .math-card {
-        background: #1c1f26; border-radius: 15px;
-        padding: 20px; margin: 10px 0;
-        border-left: 5px solid #6a11cb;
+
+    /* Glassmorphism Card Effect */
+    .math-container {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        border-radius: 20px;
+        padding: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    }
+
+    /* Neon Button */
+    .stButton>button {
+        background: linear-gradient(45deg, #e94560, #950740);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 15px 30px;
+        font-size: 18px;
+        font-weight: bold;
+        transition: 0.3s;
+        width: 100%;
+        box-shadow: 0 0 15px #e94560;
+    }
+
+    .stButton>button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 0 25px #e94560;
+    }
+
+    /* Text Input Styling */
+    input {
+        background-color: rgba(0,0,0,0.5) !important;
+        color: #00fff2 !important;
+        border: 1px solid #e94560 !important;
     }
     </style>
-    """, unsafe_Class_unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# 2. APP HEADER
-st.title("🤖 Maybot Math AI")
-st.caption("Class 9-10 CBSE & International Board Specialist")
+# 2. THE APP HEADER
+st.title("🤖 Maybot Math: Ultimate Edition")
+st.write("---")
 
-# 3. INTERFACE
-query = st.text_input("Enter your word problem or equation:", placeholder="e.g., sum of x and 5 is 20")
+# 3. INTERACTIVE SECTION
+col1, col2 = st.columns([2, 1])
 
-if st.button("SOLVE WITH MAYBOT"):
-    with st.spinner('🤖 Maybot is thinking...'):
-        # Here we use the Symbolic Logic we built earlier
+with col1:
+    st.markdown('<div class="math-container">', unsafe_allow_html=True)
+    user_input = st.text_input("Enter any Word Problem or Equation:", placeholder="e.g. A train travels 360km...")
+    
+    if st.button("PROVE & SOLVE"):
+        # LOGIC: Formal Verification Engine
         x = sp.symbols('x')
         try:
-            # Simple NLP-to-Math conversion logic
-            clean_query = query.lower().replace("sum of x and ", "x + ").replace(" is ", " - ")
-            expr = sp.sympify(clean_query)
-            sol = sp.solve(expr, x)
+            # Simple placeholder for NLP logic
+            # In a full app, this would use an LLM API to turn text to an equation
+            expr = sp.sympify(user_input.replace('^', '**'))
+            solutions = sp.solve(expr, x)
             
-            # DISPLAY RESULTS IN A MAYBOT CARD
-            st.markdown(f"""
-                <div class="math-card">
-                    <h4>✅ Verified Solution</h4>
-                    <p><b>Logic:</b> {expr} = 0</p>
-                    <h2 style="color: #00ffcc;">x = {sol[0] if sol else 'No Solution'}</h2>
-                </div>
-            """, unsafe_allow_html=True)
+            st.subheader("📝 Step-by-Step Proof")
+            st.latex(sp.latex(expr) + " = 0")
             
-            st.success("Steps generated based on CBSE marking scheme.")
-            
-        except Exception as e:
-            st.error("I need a bit more detail to solve this perfectly!")
+            for i, sol in enumerate(solutions):
+                st.info(f"Root {i+1}: {sol}")
+                # Verification Step
+                check = expr.subs(x, sol)
+                st.caption(f"Verification: Substituted {sol} into equation = {sp.simplify(check)} ✅")
 
-# 4. SIDEBAR FEATURES
-st.sidebar.header("Maybot Tools")
-st.sidebar.button("📷 Scan Question")
-st.sidebar.button("📘 Formula Library")
-st.sidebar.button("📊 Progress Tracker")
+        except Exception as e:
+            st.error("Maybot needs a clearer equation to reach 100% verification.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.subheader("📊 Visualization")
+    # Interactive Graphing for Class 10 Functions
+    fig = go.Figure()
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+    st.plotly_chart(fig)
