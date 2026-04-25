@@ -1,16 +1,18 @@
 import streamlit as st
 import sympy as sp
-import plotly.graph_objects as go
 import numpy as np
+import plotly.graph_objects as go
 import re
+from datetime import datetime
 
-st.set_page_config(page_title="May-Solver GOD MODE", layout="wide")
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="MaySolver Pro", layout="wide")
 
-# --- STYLE ---
+# ---------------- STYLE ----------------
 st.markdown("""
 <style>
 .stApp {
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    background: linear-gradient(135deg,#0f0c29,#302b63,#24243e);
     color: white;
 }
 .glass {
@@ -21,11 +23,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SYMBOLS ---
+# ---------------- SYMBOLS ----------------
 x, y, z = sp.symbols('x y z')
 
-# --- BRAIN ---
-class GodBrain:
+# ---------------- SESSION ----------------
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# ---------------- BRAIN ----------------
+class MathBrain:
 
     def preprocess(self, text):
         text = text.lower()
@@ -34,38 +40,38 @@ class GodBrain:
         text = text.replace("is", "=")
         return text
 
-    def extract_equations(self, text):
+    def parse_equations(self, text):
         parts = re.split(r',|and', text)
-        equations = []
+        eqs = []
 
         for part in parts:
             if "=" in part:
                 try:
                     lhs, rhs = part.split("=")
                     eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
-                    equations.append(eq)
+                    eqs.append(eq)
                 except:
-                    continue
-        return equations
+                    pass
+        return eqs
 
     def solve(self, text):
         text = self.preprocess(text)
 
-        eqs = self.extract_equations(text)
+        eqs = self.parse_equations(text)
 
-        # MULTI EQUATION SYSTEM
+        # SYSTEM
         if len(eqs) > 1:
             try:
                 sol = sp.solve(eqs)
-                return sol, eqs, "System of Equations"
+                return sol, eqs, "System"
             except Exception as e:
                 return None, None, str(e)
 
-        # SINGLE EQUATION
+        # SINGLE
         if len(eqs) == 1:
             try:
                 sol = sp.solve(eqs[0])
-                return sol, eqs, "Single Equation"
+                return sol, eqs, "Equation"
             except Exception as e:
                 return None, None, str(e)
 
@@ -77,7 +83,7 @@ class GodBrain:
         except Exception as e:
             return None, None, str(e)
 
-# --- GRAPH ---
+# ---------------- GRAPH ----------------
 def plot_graph(eqs):
     fig = go.Figure()
     x_vals = np.linspace(-10, 10, 300)
@@ -101,48 +107,65 @@ def plot_graph(eqs):
     fig.update_layout(template="plotly_dark")
     return fig
 
-# --- STEPS ---
-def show_steps(eqs):
-    st.subheader("🧠 Step Breakdown")
-    for eq in eqs:
-        st.latex(sp.latex(eq))
+# ---------------- AI (OPTIONAL) ----------------
+def ask_ai(question):
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- UI ---
-brain = GodBrain()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Explain math step by step clearly."},
+                {"role": "user", "content": question}
+            ],
+            timeout=10
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"AI Error: {e}"
 
-st.title("🤖 MAY-SOLVER GOD MODE")
-st.markdown("### 🚀 Ultimate AI Math Engine")
+# ---------------- UI ----------------
+brain = MathBrain()
 
-col1, col2 = st.columns([3,2])
+st.sidebar.title("🚀 MaySolver Pro")
+page = st.sidebar.radio("Navigate", ["Solver", "Graph", "AI Tutor", "History", "About"])
 
-with col1:
-    st.markdown('<div class="glass">', unsafe_allow_html=True)
+# -------- SOLVER --------
+if page == "Solver":
+    st.title("🧠 Smart Solver")
 
-    user_input = st.text_area("Enter anything math:")
+    user_input = st.text_area("Enter math problem:")
 
-    if st.button("⚡ Solve"):
+    if st.button("Solve"):
         if user_input:
-            with st.spinner("Thinking like a genius..."):
+            with st.spinner("Solving..."):
                 sol, eqs, cat = brain.solve(user_input)
 
                 if eqs:
                     st.success(f"Detected: {cat}")
 
-                    show_steps(eqs)
+                    st.subheader("🧾 Steps")
+                    for eq in eqs:
+                        st.latex(sp.latex(eq))
 
                     st.subheader("✅ Answer")
                     st.write(sol)
 
                     st.session_state["eqs"] = eqs
+
+                    # Save history
+                    st.session_state.history.append({
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "input": user_input,
+                        "output": str(sol)
+                    })
                 else:
                     st.error(cat)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="glass">', unsafe_allow_html=True)
-
-    st.subheader("📊 Graph")
+# -------- GRAPH --------
+elif page == "Graph":
+    st.title("📊 Graph Visualizer")
 
     if "eqs" in st.session_state:
         fig = plot_graph(st.session_state["eqs"])
@@ -150,6 +173,40 @@ with col2:
     else:
         st.info("Solve something first")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+# -------- AI --------
+elif page == "AI Tutor":
+    st.title("🤖 AI Tutor")
 
-st.markdown("<center>🔥 GOD MODE ACTIVATED 🔥</center>", unsafe_allow_html=True)
+    q = st.text_area("Ask anything")
+
+    if st.button("Get Explanation"):
+        if q:
+            with st.spinner("Thinking..."):
+                st.write(ask_ai(q))
+
+# -------- HISTORY --------
+elif page == "History":
+    st.title("🧾 History")
+
+    if st.session_state.history:
+        for item in reversed(st.session_state.history):
+            st.markdown(f"""
+            **{item['time']}**  
+            ➤ {item['input']}  
+            ✅ {item['output']}
+            """)
+    else:
+        st.info("No history yet")
+
+# -------- ABOUT --------
+elif page == "About":
+    st.title("🔥 About")
+    st.write("""
+    MaySolver Pro:
+    - Smart Math Solver
+    - Graph Visualizer
+    - AI Tutor
+    - Built with Streamlit
+    """)
+
+st.markdown("<center>🚀 MaySolver Pro | 2026 Edition</center>", unsafe_allow_html=True)
