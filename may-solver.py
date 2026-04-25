@@ -6,17 +6,7 @@ import re
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver Smart", layout="wide")
-
-# ---------------- STYLE ----------------
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg,#0f0c29,#302b63,#24243e);
-    color: white;
-}
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="MaySolver AI-Lite", layout="wide")
 
 # ---------------- SYMBOLS ----------------
 x, y = sp.symbols('x y')
@@ -35,66 +25,66 @@ def word_to_number(text):
         text = re.sub(rf"\b{w}\b", str(n), text)
     return text
 
-# ---------------- SMART PARSER ----------------
-def smart_parser(text):
+# ---------------- INTENT DETECTOR ----------------
+def detect_equations(text):
     text = text.lower()
     text = word_to_number(text)
 
-    # Remove noise words
-    text = re.sub(r'\b(numbers?|find|them|and)\b', '', text)
-
-    nums = list(map(int, re.findall(r'\d+', text)))
+    equations = []
 
     try:
         # -------- DIFFERENCE --------
-        if "difference" in text:
-            diff = nums[0]
-
-            if "times" in text:
-                multiplier = nums[1]
-                eq1 = sp.Eq(x - y, diff)
-                eq2 = sp.Eq(x, multiplier * y)
-                return [eq1, eq2]
-
-            elif "sum" in text:
-                total = nums[1]
-                eq1 = sp.Eq(x - y, diff)
-                eq2 = sp.Eq(x + y, total)
-                return [eq1, eq2]
+        diff = re.search(r'difference.*?(\d+)', text)
+        if diff:
+            value = int(diff.group(1))
+            equations.append(sp.Eq(x - y, value))
 
         # -------- SUM --------
-        if "sum" in text:
-            total = nums[0]
+        summ = re.search(r'sum.*?(\d+)', text)
+        if summ:
+            value = int(summ.group(1))
+            equations.append(sp.Eq(x + y, value))
 
-            if "times" in text:
-                multiplier = nums[1]
-                eq1 = sp.Eq(x + y, total)
-                eq2 = sp.Eq(x, multiplier * y)
-                return [eq1, eq2]
+        # -------- TIMES --------
+        times = re.search(r'(\d+)\s*times', text)
+        if times:
+            value = int(times.group(1))
+            equations.append(sp.Eq(x, value * y))
+
+        # -------- EXCEEDS --------
+        exceeds = re.search(r'exceeds.*?(\d+)', text)
+        if exceeds:
+            value = int(exceeds.group(1))
+            equations.append(sp.Eq(x, y + value))
+
+        # -------- PRODUCT --------
+        product = re.search(r'product.*?(\d+)', text)
+        if product:
+            value = int(product.group(1))
+            equations.append(sp.Eq(x * y, value))
 
         # -------- DIRECT EQUATION --------
         if "=" in text:
             lhs, rhs = text.split("=")
-            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
-            return [eq]
+            equations.append(sp.Eq(sp.sympify(lhs), sp.sympify(rhs)))
 
     except:
         pass
 
-    return None
+    return equations if len(equations) >= 1 else None
 
 # ---------------- SOLVER ----------------
-def solve_math(user_input):
-    eqs = smart_parser(user_input)
+def solve_problem(user_input):
+    eqs = detect_equations(user_input)
 
     if eqs:
         try:
             sol = sp.solve(eqs, (x, y))
-            return sol, eqs, "Smart Word Problem"
+            return sol, eqs, "AI-Lite Word Problem"
         except:
             pass
 
-    # fallback simple
+    # fallback
     try:
         if "=" in user_input:
             lhs, rhs = user_input.split("=")
@@ -126,18 +116,18 @@ def plot_graph(eqs):
     return fig
 
 # ---------------- UI ----------------
-st.sidebar.title("🚀 MaySolver")
+st.sidebar.title("🚀 MaySolver AI-Lite")
 page = st.sidebar.radio("Menu", ["Solver", "Graph", "History"])
 
 # -------- SOLVER --------
 if page == "Solver":
-    st.title("🧠 Smart Math Solver")
+    st.title("🧠 AI-Lite Math Solver")
 
     user_input = st.text_area("Enter problem:")
 
     if st.button("Solve"):
         if user_input:
-            sol, eqs, cat = solve_math(user_input)
+            sol, eqs, cat = solve_problem(user_input)
 
             if eqs:
                 st.success(f"Detected: {cat}")
@@ -148,12 +138,9 @@ if page == "Solver":
 
                 st.subheader("✅ Answer")
 
-                # Fix JSON issue
                 if isinstance(sol, dict):
-                    sol_clean = {str(k): v for k, v in sol.items()}
-                    st.write(sol_clean)
-                else:
-                    st.write(sol)
+                    sol = {str(k): v for k, v in sol.items()}
+                st.write(sol)
 
                 st.session_state["eqs"] = eqs
 
@@ -190,4 +177,4 @@ elif page == "History":
     else:
         st.info("No history yet")
 
-st.markdown("<center>🚀 MaySolver Smart Parser Edition</center>", unsafe_allow_html=True)
+st.markdown("<center>🚀 MaySolver AI-Lite (No API)</center>", unsafe_allow_html=True)
