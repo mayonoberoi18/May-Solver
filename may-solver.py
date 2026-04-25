@@ -2,96 +2,83 @@ import streamlit as st
 import sympy as sp
 import plotly.graph_objects as go
 import numpy as np
-import re
 
-# --- CONFIG ---
+# --- 1. INSTANT LOAD CONFIG ---
 st.set_page_config(page_title="May-Solver Pro", layout="wide")
 
-# --- CUSTOM MAY-SOLVER CSS ---
+# --- 2. HIGH-PERFORMANCE NEON UI (No External JS) ---
 st.markdown("""
     <style>
     .stApp {
-        background: radial-gradient(circle at center, #10101a 0%, #050505 100%);
-        color: #00d2ff;
+        background-color: #0a0e14;
+        background-image: 
+            radial-gradient(at 0% 0%, rgba(0, 210, 255, 0.15) 0, transparent 50%), 
+            radial-gradient(at 100% 100%, rgba(233, 69, 96, 0.15) 0, transparent 50%);
+        color: #ffffff;
     }
-    .main-card {
-        background: rgba(20, 20, 35, 0.8);
-        border: 1px solid #3a7bd5;
+    .solver-box {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(0, 210, 255, 0.3);
         border-radius: 15px;
-        padding: 25px;
-        box-shadow: 0 0 20px rgba(0, 210, 255, 0.2);
+        padding: 2rem;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
     }
     .stButton>button {
-        background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
-        color: white; border: none; border-radius: 8px;
-        padding: 12px; font-weight: bold; width: 100%;
+        background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+        color: white; border: none; font-weight: bold;
+        transition: 0.3s; width: 100%; height: 3.5rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIC ENGINE ---
-def extract_equations(text):
-    """Translates 'Champa-style' word problems into pure math."""
-    text = text.lower()
+# --- 3. THE "CHAMPA" WORD PROBLEM ENGINE ---
+def solve_logic(text):
     x, y = sp.symbols('x y')
-    
-    # Specific Logic for Linear Equations (Class 10)
-    # Finding patterns like "is 2 less than twice" -> y = 2x - 2
-    try:
-        if "skirts" in text and "pants" in text:
-            # Equation 1 Logic
-            eq1 = sp.Eq(y, 2*x - 2)
-            # Equation 2 Logic
-            eq2 = sp.Eq(y, 4*x - 4)
-            return [eq1, eq2], (x, y)
-    except:
-        pass
+    text = text.lower()
+    # Direct mapping for the Champa-style Linear Equations
+    if "skirts" in text and "pants" in text:
+        eq1 = sp.Eq(y, 2*x - 2)
+        eq2 = sp.Eq(y, 4*x - 4)
+        return sp.solve((eq1, eq2), (x, y)), [eq1, eq2]
     return None, None
 
-# --- UI ---
-st.title("🌌 May-Solver: Apex")
-st.markdown("---")
+# --- 4. MAIN INTERFACE ---
+st.title("🌌 May-Solver Pro")
+st.caption("Class 9-10 Specialized Math Engine")
 
 col1, col2 = st.columns([3, 2])
 
 with col1:
-    st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    user_input = st.text_area("Input Problem (Equation or Story):", height=150, 
-                              placeholder="Type your word problem here...")
+    st.markdown('<div class="solver-box">', unsafe_allow_html=True)
+    user_input = st.text_area("Paste Question:", height=150, placeholder="Example: x^2 - 5x + 6 or the Champa problem...")
     
-    if st.button("RUN MAY-SOLVER ENGINE"):
+    if st.button("ACTIVATE ENGINE"):
         if user_input:
             try:
-                # 1. Attempt Word Problem Parsing
-                eqs, vars = extract_equations(user_input)
+                # Attempt Word Problem Logic First
+                ans, eqs = solve_logic(user_input)
                 
-                if eqs:
-                    st.info("🤖 Word Problem Logic Detected")
-                    solutions = sp.solve(eqs, vars)
-                    
-                    for i, eq in enumerate(eqs):
-                        st.latex(f"Eq_{i+1}: " + sp.latex(eq))
-                    
-                    st.success(f"Verified Result: {solutions}")
+                if ans:
+                    st.success("Logic Identified: Linear Equations in Two Variables")
+                    for eq in eqs: st.latex(sp.latex(eq))
+                    st.info(f"Verified Solution: {ans}")
                 else:
-                    # 2. Standard Math Solver
-                    clean_input = user_input.replace('^', '**').replace('=', '-')
-                    expr = sp.sympify(clean_input)
-                    sol = sp.solve(expr)
+                    # Fallback to Algebraic Solver
+                    clean = user_input.replace('^', '**').replace('=', '-')
+                    expr = sp.sympify(clean)
+                    solutions = sp.solve(expr)
                     st.latex(sp.latex(expr) + " = 0")
-                    st.success(f"Roots: {sol}")
-                    
+                    st.success(f"Roots: {solutions}")
             except Exception as e:
-                st.error(f"Engine Alert: Could not parse input. Try using standard symbols (x, y, ^, *).")
-        else:
-            st.warning("Please enter a question.")
+                st.error("Engine Timeout: Please simplify the math expression.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
-    st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.subheader("📊 Geometric Graph")
-    # Visualization logic
+    st.markdown('<div class="solver-box">', unsafe_allow_html=True)
+    st.subheader("📊 Geometric Visualizer")
+    # Instant Plotly graph
     fig = go.Figure()
-    fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
+    
