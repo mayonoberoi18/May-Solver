@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver AI-Lite", layout="wide")
+st.set_page_config(page_title="MaySolver ENGINE MAX", layout="wide")
 
 # ---------------- SYMBOLS ----------------
 x, y = sp.symbols('x y')
@@ -15,166 +15,235 @@ x, y = sp.symbols('x y')
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ---------------- WORD → NUMBER ----------------
-def word_to_number(text):
-    words = {
-        "one":1,"two":2,"three":3,"four":4,"five":5,
-        "six":6,"seven":7,"eight":8,"nine":9,"ten":10
-    }
-    for w,n in words.items():
-        text = re.sub(rf"\b{w}\b", str(n), text)
+# ---------------- PREPROCESS ----------------
+def clean(text):
+    text = text.lower()
+    text = text.replace("twice", "2 times")
+    text = text.replace("thrice", "3 times")
     return text
 
-# ---------------- INTENT DETECTOR ----------------
-def detect_equations(text):
-    text = text.lower()
-    text = word_to_number(text)
+# ---------------- ENTITY EXTRACTION ----------------
+def extract_entities(text):
+    entities = {}
+    if "width" in text: entities["width"] = x
+    if "length" in text: entities["length"] = y
+    if "age" in text: entities["age"] = x
+    if "number" in text: entities["number"] = x
+    return entities
 
-    equations = []
+# ---------------- RELATION EXTRACTION ----------------
+def extract_relations(text):
+    relations = []
 
-    try:
-        # -------- DIFFERENCE --------
-        diff = re.search(r'difference.*?(\d+)', text)
-        if diff:
-            value = int(diff.group(1))
-            equations.append(sp.Eq(x - y, value))
+    more = re.findall(r'(\d+).*more than.*(width|length|age|number)', text)
+    for val, var in more:
+        relations.append((var, "+", int(val)))
 
-        # -------- SUM --------
-        summ = re.search(r'sum.*?(\d+)', text)
-        if summ:
-            value = int(summ.group(1))
-            equations.append(sp.Eq(x + y, value))
+    less = re.findall(r'(\d+).*less than.*(width|length|age|number)', text)
+    for val, var in less:
+        relations.append((var, "-", int(val)))
 
-        # -------- TIMES --------
-        times = re.search(r'(\d+)\s*times', text)
-        if times:
-            value = int(times.group(1))
-            equations.append(sp.Eq(x, value * y))
+    times = re.findall(r'(\d+)\s*times.*(number|age)', text)
+    for val, var in times:
+        relations.append((var, "*", int(val)))
 
-        # -------- EXCEEDS --------
-        exceeds = re.search(r'exceeds.*?(\d+)', text)
-        if exceeds:
-            value = int(exceeds.group(1))
-            equations.append(sp.Eq(x, y + value))
+    return relations
 
-        # -------- PRODUCT --------
-        product = re.search(r'product.*?(\d+)', text)
-        if product:
-            value = int(product.group(1))
-            equations.append(sp.Eq(x * y, value))
+# ---------------- RECTANGLE ----------------
+def solve_rectangle(text):
+    if "rectangle" not in text:
+        return None
 
-        # -------- DIRECT EQUATION --------
-        if "=" in text:
-            lhs, rhs = text.split("=")
-            equations.append(sp.Eq(sp.sympify(lhs), sp.sympify(rhs)))
+    steps = ["Let width = x"]
+    width = x
+    length = y
 
-    except:
-        pass
+    rel = re.search(r'(\d+).*more than.*width', text)
+    if rel:
+        diff = int(rel.group(1))
+        length = width + diff
+        steps.append(f"Length = width + {diff}")
 
-    return equations if len(equations) >= 1 else None
+    half = re.search(r'half.*?(\d+)', text)
+    full = re.search(r'perimeter.*?(\d+)', text)
 
-# ---------------- SOLVER ----------------
-def solve_problem(user_input):
-    eqs = detect_equations(user_input)
+    if half:
+        p = 2 * int(half.group(1))
+        steps.append(f"Half perimeter → {p}")
+    elif full:
+        p = int(full.group(1))
+        steps.append(f"Perimeter = {p}")
+    else:
+        p = None
+
+    if p:
+        eq = sp.Eq(2 * (length + width), p)
+        sol = sp.solve(eq, x)[0]
+
+        return {
+            "type": "rectangle",
+            "width": sol,
+            "length": length.subs(x, sol),
+            "equations": [eq],
+            "steps": steps + ["Used: 2(L + W)"]
+        }
+
+    return None
+
+# ---------------- ALGEBRA ----------------
+def solve_algebra(text):
+    eqs = []
+    nums = list(map(int, re.findall(r'\d+', text)))
+
+    if "sum" in text and nums:
+        eqs.append(sp.Eq(x + y, nums[0]))
+
+    if "difference" in text and nums:
+        eqs.append(sp.Eq(x - y, nums[0]))
+
+    if "product" in text and nums:
+        eqs.append(sp.Eq(x * y, nums[0]))
+
+    if "times" in text and nums:
+        eqs.append(sp.Eq(x, nums[0] * y))
+
+    if "=" in text:
+        lhs, rhs = text.split("=")
+        eqs.append(sp.Eq(sp.sympify(lhs), sp.sympify(rhs)))
 
     if eqs:
-        try:
-            sol = sp.solve(eqs, (x, y))
-            return sol, eqs, "AI-Lite Word Problem"
-        except:
-            pass
+        sol = sp.solve(eqs, (x, y))
+        return {
+            "type": "algebra",
+            "solution": sol,
+            "equations": eqs,
+            "steps": ["Formed equations and solved"]
+        }
 
-    # fallback
-    try:
-        if "=" in user_input:
-            lhs, rhs = user_input.split("=")
-            eq = sp.Eq(sp.sympify(lhs), sp.sympify(rhs))
-            sol = sp.solve(eq)
-            return sol, [eq], "Equation"
-    except:
-        pass
+    return None
 
-    return None, None, "Could not understand"
+# ---------------- SPEED ----------------
+def solve_speed(text):
+    nums = list(map(int, re.findall(r'\d+', text)))
+
+    if "distance" in text and "time" in text and len(nums) >= 2:
+        return {"type":"speed","speed":nums[0]/nums[1],"steps":["Speed = D/T"]}
+
+    if "speed" in text and "time" in text and len(nums) >= 2:
+        return {"type":"speed","distance":nums[0]*nums[1],"steps":["D = S×T"]}
+
+    if "distance" in text and "speed" in text and len(nums) >= 2:
+        return {"type":"speed","time":nums[0]/nums[1],"steps":["T = D/S"]}
+
+    return None
+
+# ---------------- PROFIT ----------------
+def solve_profit(text):
+    nums = list(map(int, re.findall(r'\d+', text)))
+
+    if "cost" in text and "selling" in text and len(nums) >= 2:
+        return {
+            "type": "profit",
+            "profit": nums[1] - nums[0],
+            "steps": ["Profit = SP - CP"]
+        }
+
+    return None
+
+# ---------------- AGE ----------------
+def solve_age(text):
+    if "age" not in text:
+        return None
+
+    return {
+        "type": "age",
+        "steps": [
+            "Let age = x",
+            "Form equations using relations (expand logic for full solving)"
+        ]
+    }
+
+# ---------------- SMART ENGINE ----------------
+def smart_engine(text):
+    text = clean(text)
+
+    for solver in [
+        solve_rectangle,
+        solve_speed,
+        solve_profit,
+        solve_age,
+        solve_algebra
+    ]:
+        result = solver(text)
+        if result:
+            return result
+
+    return None
 
 # ---------------- GRAPH ----------------
 def plot_graph(eqs):
     fig = go.Figure()
-    x_vals = np.linspace(-10, 10, 200)
+    xs = np.linspace(-10, 10, 200)
 
     for eq in eqs:
         try:
             y_expr = sp.solve(eq, y)
-            if y_expr:
-                f = sp.lambdify(x, y_expr[0], "numpy")
-                y_vals = f(x_vals)
-
-                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines'))
+            f = sp.lambdify(x, y_expr[0], "numpy")
+            fig.add_trace(go.Scatter(x=xs, y=f(xs)))
         except:
-            continue
+            pass
 
     fig.update_layout(template="plotly_dark")
     return fig
 
 # ---------------- UI ----------------
-st.sidebar.title("🚀 MaySolver AI-Lite")
+st.sidebar.title("🚀 MaySolver ENGINE MAX")
 page = st.sidebar.radio("Menu", ["Solver", "Graph", "History"])
 
-# -------- SOLVER --------
 if page == "Solver":
-    st.title("🧠 AI-Lite Math Solver")
+    st.title("🧠 MaySolver ENGINE MAX")
 
     user_input = st.text_area("Enter problem:")
 
     if st.button("Solve"):
-        if user_input:
-            sol, eqs, cat = solve_problem(user_input)
+        result = smart_engine(user_input)
 
-            if eqs:
-                st.success(f"Detected: {cat}")
+        if result:
+            st.success("✅ Solved")
 
-                st.subheader("🧾 Equations")
-                for eq in eqs:
+            if "equations" in result:
+                for eq in result["equations"]:
                     st.latex(sp.latex(eq))
 
-                st.subheader("✅ Answer")
+            for step in result["steps"]:
+                st.write("•", step)
 
-                if isinstance(sol, dict):
-                    sol = {str(k): v for k, v in sol.items()}
-                st.write(sol)
+            st.subheader("Answer")
+            for k, v in result.items():
+                if k not in ["type","steps","equations"]:
+                    st.write(f"{k} = {v}")
 
-                st.session_state["eqs"] = eqs
+            st.session_state["eqs"] = result.get("equations", [])
 
-                st.session_state.history.append({
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                    "input": user_input,
-                    "output": str(sol)
-                })
+            st.session_state.history.append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "input": user_input,
+                "output": str(result)
+            })
 
-            else:
-                st.error(cat)
+        else:
+            st.error("❌ Could not understand")
 
-# -------- GRAPH --------
 elif page == "Graph":
     st.title("📊 Graph")
-
     if "eqs" in st.session_state:
-        fig = plot_graph(st.session_state["eqs"])
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(plot_graph(st.session_state["eqs"]))
     else:
         st.info("Solve something first")
 
-# -------- HISTORY --------
 elif page == "History":
     st.title("🧾 History")
+    for item in reversed(st.session_state.history):
+        st.write(item)
 
-    if st.session_state.history:
-        for item in reversed(st.session_state.history):
-            st.markdown(f"""
-            **{item['time']}**  
-            ➤ {item['input']}  
-            ✅ {item['output']}
-            """)
-    else:
-        st.info("No history yet")
-
-st.markdown("<center>🚀 MaySolver AI-Lite (No API)</center>", unsafe_allow_html=True)
+st.markdown("<center>🚀 MaySolver ENGINE MAX (No API)</center>", unsafe_allow_html=True)
