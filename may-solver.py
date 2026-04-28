@@ -4,42 +4,33 @@ import numpy as np
 import plotly.graph_objects as go
 import pytesseract
 from PIL import Image
-import cv2
 import re
+import os
 from datetime import datetime
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="MaySolver ULTIMATE OFFLINE", layout="wide")
+st.set_page_config(page_title="MaySolver ULTIMATE", layout="wide")
 
-# 🔴 SET YOUR PATH
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Safe Tesseract path (ONLY for local Windows)
+if os.name == "nt":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 x, y = sp.symbols('x y')
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ---------------- IMAGE PROCESSING ----------------
+if "eqs" not in st.session_state:
+    st.session_state.eqs = []
+
+# ---------------- IMAGE PROCESSING (NO CV2) ----------------
 def preprocess_image(image):
-    img = np.array(image)
+    img = image.convert("L")  # grayscale
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # improve contrast (threshold)
+    img = img.point(lambda p: 0 if p < 140 else 255)
 
-    # denoise
-    denoise = cv2.fastNlMeansDenoising(gray)
-
-    # sharpen
-    kernel = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]])
-    sharp = cv2.filter2D(denoise, -1, kernel)
-
-    # adaptive threshold
-    thresh = cv2.adaptiveThreshold(
-        sharp, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 11, 2
-    )
-
-    return thresh
+    return np.array(img)
 
 # ---------------- OCR ENGINE ----------------
 def ocr_multi_pass(image):
@@ -48,8 +39,8 @@ def ocr_multi_pass(image):
     text1 = pytesseract.image_to_string(img1)
     text2 = pytesseract.image_to_string(image)
 
-    # third pass (resize for better detection)
-    resized = cv2.resize(np.array(image), None, fx=2, fy=2)
+    # resize (better detection)
+    resized = image.resize((image.width*2, image.height*2))
     text3 = pytesseract.image_to_string(resized)
 
     texts = [text1, text2, text3]
@@ -57,7 +48,7 @@ def ocr_multi_pass(image):
 
     return clean_ocr(best)
 
-# ---------------- OCR CLEANING ----------------
+# ---------------- OCR CLEAN ----------------
 def clean_ocr(text):
     text = text.lower()
 
@@ -73,26 +64,12 @@ def clean_ocr(text):
 
     return text.strip()
 
-# ---------------- TEXT NORMALIZATION ----------------
+# ---------------- NORMALIZE ----------------
 def normalize(text):
     text = text.lower()
     text = text.replace("twice", "2 times")
     text = text.replace("thrice", "3 times")
     return text
-
-# ---------------- ENTITY + RELATION ----------------
-def extract_relations(text):
-    relations = []
-
-    more = re.findall(r'(\d+).*more than.*(width|length|number)', text)
-    for val, var in more:
-        relations.append((var, "+", int(val)))
-
-    less = re.findall(r'(\d+).*less than.*(width|length|number)', text)
-    for val, var in less:
-        relations.append((var, "-", int(val)))
-
-    return relations
 
 # ---------------- RECTANGLE ----------------
 def solve_rectangle(text):
@@ -165,6 +142,12 @@ def engine(text):
     for fn in [solve_rectangle, solve_speed, solve_algebra]:
         res = fn(text)
         if res:
+            st.session_state.eqs = res.get("equations", [])
+            st.session_state.history.append({
+                "time": str(datetime.now()),
+                "input": text,
+                "result": res
+            })
             return res
 
     return None
@@ -234,12 +217,15 @@ elif page == "Image Solver":
 
 # GRAPH
 elif page == "Graph":
-    if "eqs" in st.session_state:
-        st.plotly_chart(plot_graph(st.session_state["eqs"]))
+    if st.session_state.eqs:
+        st.plotly_chart(plot_graph(st.session_state.eqs))
     else:
-        st.info("Solve first")
+        st.info("Solve something first")
 
 # HISTORY
 elif page == "History":
-    for h in st.session_state.history:
-        st.write(h)
+    for h in st.session_state.history[::-1]:
+        st.write("🕒", h["time"])
+        st.write("Input:", h["input"])
+        st.write("Result:", h["result"])
+        st.markdown("---")
